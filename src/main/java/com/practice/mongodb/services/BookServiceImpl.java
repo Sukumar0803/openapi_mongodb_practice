@@ -11,7 +11,13 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 @Service
 public class BookServiceImpl implements BookService {
@@ -29,7 +35,28 @@ public class BookServiceImpl implements BookService {
     @Override
     public List<BookDTO> getAllBooks() {
         try {
-            List<Book> books = bookRepository.findAll();
+            List<Book> books = new ArrayList<>();
+            List<CompletableFuture<List<Book>>> futures = new ArrayList<>();
+            ExecutorService executorService = Executors.newFixedThreadPool(10);
+            for (int i : IntStream.range(1,10).toArray()) {
+                CompletableFuture<List<Book>> future = CompletableFuture.supplyAsync(() -> {
+                    try {
+                        if (i == 9 || i == 3 || i==1)
+                            throw new RuntimeException("exception for ith Run");
+                        return bookRepository.findAll();
+                    } catch (Exception e) {
+                        System.out.println("An Exception occurered due to "+ e.getMessage());
+                        return null;
+                    }
+                },executorService);
+                futures.add(future);
+            }
+            futures = futures.stream().filter(fut -> !fut.isCompletedExceptionally()).collect(Collectors.toList());
+            for (CompletableFuture<List<Book>> future : futures) {
+                if (!Objects.isNull(future.get())) {
+                    books.addAll(future.join());
+                }
+            }
             List<BookDTO> booksResponse = new ArrayList<>();
             books.forEach(b -> booksResponse.add(bookMapper.getBookDTO(b)));
             return booksResponse;
